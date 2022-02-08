@@ -1,5 +1,4 @@
-import imageio
-import cv2
+import cv2, imageio, methods
 from loguru import logger
 
 
@@ -12,34 +11,30 @@ def xxyy2bbox(xxyy):
     return x1, y1, x2 - x1, y2 - y1
 
 @logger.catch()
-def do_mosaic(img, xxyy, size, down=cv2.INTER_AREA, up=cv2.INTER_NEAREST_EXACT):
-    x, y, w, h = xxyy
-    tmp = img[y:y+h, x:x+w]
-    img[y:y+h, x:x+w] = cv2.resize(
-        cv2.resize(
-            tmp, size, interpolation=down
-        ), (w, h), interpolation=up
-    )
+def mosaic_inplace(image, xxyy, methods):
+    x1, x2, y1, y2 = xxyy
+    img = image[y1:y2, x1:x2]
+    for factor, algorithm in methods:
+        w, h, _ = img.shape
+        cv2.resize(img, (w//factor,h//factor), img, interpolation=algorithm)
+    image[y1:y2, x1:x2] = cv2.resize(img, (x2-x1,y2-y1), interpolation=cv2.INTER_NEAREST)
+    return image  # to enable chain call
 
-def robust_mosaic(img, rect, factor, down=cv2.INTER_AREA, up=cv2.INTER_NEAREST_EXACT):
-    x, y, w, h = rect
-    if w <= 0:
-        print(f"modified width from {w}", end=" ", flush=True)
-        w = img.shape[1] - x + w
-        print(f"to {w}.")
-    if h <= 0:
-        print(f"modified height from {h}", end=" ", flush=True)
-        h = img.shape[0] - y + h
-        print(f"to {h}.")
+def show(image):
+    from matplotlib import pyplot as plt
+    plt.imshow(image)
+    plt.show()
 
-    width = w // factor
-    height = h // factor
+rgb = (0, 1, 2)
+rbg = (0, 2, 1)
+gbr = (1, 2, 0)
+grb = (1, 0, 2)
+brg = (2, 0, 1)
+bgr = (2, 1, 0)
 
-    do_mosaic(img, (x, y, w, h), (width, height), down, up)
-
-
-def shift(img, x1, x2, y1, y2):
-    img[y1:y2, x1:x2] = img[y1:y2, x1:x2, (1,2,0)]
+def shift(image, xxyy, rgb=gbr):
+    x1, x2, y1, y2 = xxyy
+    image[y1:y2, x1:x2] = image[y1:y2, x1:x2, rgb]
 
 
 """ future features
@@ -48,18 +43,17 @@ def shift(img, x1, x2, y1, y2):
 """  # TODO 👆
 
 
+
 filename = "testcases/2.jpg"
 
-if __name__ == '__main__':
-    # from matplotlib import pyplot as plt
-    img = imageio.imread(filename)
-    for i in range(10):
-        robust_mosaic(img, (30, 200, 100, -150), factor=4, down=cv2.INTER_AREA)
-        robust_mosaic(img, (30, 200, 100, -150), factor=5, down=cv2.INTER_LINEAR)
-    robust_mosaic(img, (30, 200, 100, -150), factor=20, down=cv2.INTER_AREA)
 
-    robust_mosaic(img, (175, 100, -175, 75), factor=15)
-    robust_mosaic(img, (300, 1820, 140, 60), factor=15)
-    # plt.imshow(img)
-    # plt.show()
-    imageio.imwrite(f"{filename[:filename.rindex('.')]}_with_mosaic.png", img)
+
+if __name__ == '__main__':
+    img = imageio.imread(filename)
+    mosaic_inplace(img, (30, 130, 200, -150), methods.area_nearest(5,4))
+    mosaic_inplace(img, (175, -175, 100, 175), methods.area(15))
+    mosaic_inplace(img, (300, 440, 1820, 1880), methods.area(15))
+    from matplotlib import pyplot as plt
+    plt.imshow(img)
+    plt.show()
+    # imageio.imwrite(f"{filename[:filename.rindex('.')]}_with_mosaic.png", img)
