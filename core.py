@@ -1,5 +1,7 @@
-import cv2, imageio, methods
+import imageio
 from loguru import logger
+from functools import partial
+from dictionary import *
 
 
 def bbox2xxyy(bbox):
@@ -10,13 +12,18 @@ def xxyy2bbox(xxyy):
     x1, x2, y1, y2 = xxyy
     return x1, y1, x2 - x1, y2 - y1
 
+def parse_minus(image, xxyy):
+    x1, x2, y1, y2 = xxyy
+    h, w = image.shape[:2]
+    return x1, (x2-1)%w+1, y1, (y2-1)%h+1
+
 @logger.catch()
 def mosaic_inplace(image, xxyy, methods):
-    x1, x2, y1, y2 = xxyy
+    x1, x2, y1, y2 = parse_minus(image, xxyy)
     img = image[y1:y2, x1:x2]
     for factor, algorithm in methods:
-        w, h, _ = img.shape
-        cv2.resize(img, (w//factor,h//factor), img, interpolation=algorithm)
+        h, w = img.shape[:2]
+        img = cv2.resize(img, (w//factor,h//factor), interpolation=algorithm)
     image[y1:y2, x1:x2] = cv2.resize(img, (x2-x1,y2-y1), interpolation=cv2.INTER_NEAREST)
     return image  # to enable chain call
 
@@ -25,35 +32,59 @@ def show(image):
     plt.imshow(image)
     plt.show()
 
-rgb = (0, 1, 2)
-rbg = (0, 2, 1)
-gbr = (1, 2, 0)
-grb = (1, 0, 2)
-brg = (2, 0, 1)
-bgr = (2, 1, 0)
-
-def shift(image, xxyy, rgb=gbr):
-    x1, x2, y1, y2 = xxyy
+def shift(image, xxyy, rgb=grb):
+    x1, x2, y1, y2 = parse_minus(image, xxyy)
     image[y1:y2, x1:x2] = image[y1:y2, x1:x2, rgb]
+    return image  # to enable chain call
 
+class WeChatScreenShot(imageio.core.Array):
+    def __init__(self, _):
+        imageio.core.Array.__init__(self)
+        self.mosaic = partial(mosaic_inplace, self)
+        self.shift = partial(shift, self)
+        self.show = partial(show, self)
 
-""" future features
-1. 目前是默认拉伸, 将来可以支持裁切
-2. bbox其实不如直接提供x1x2y1y2索引直观, 待下次重构
-"""  # TODO 👆
+    @classmethod
+    def imread(cls, path):
+        return cls(imageio.imread(path))
 
+    def imwrite(self, path):
+        imageio.imwrite(f"{path[:path.rindex('.')]}_with_mosaic.png", self)
+        return self
 
+    @property
+    def icons(self):
+        return 30, 130, 200, -150
 
-filename = "testcases/2.jpg"
+    @property
+    def title(self):
+        return 175, -175, 100, 175
 
+    @staticmethod
+    def hit_message(y1, x1, x2=None):
+        return x1, x1 + 140 if x2 is None else x2, y1, y1 + 60
+
+    def shift_and_mosaic_icons(self, rgb=grb, area=5, nearest=2):
+        self.mosaic(self.icons, inter_area_nearest(area, nearest))
+        shift(self, self.icons, rgb)
+        return self
+
+    def mosaic_title(self, area=15):
+        self.mosaic(self.title, inter_area(area))
+        return self
+
+    def mosaic_hit_message(self, y1, x1, x2=None, area=10, nearest=2):
+        self.mosaic(self.hit_message(y1,x1,x2), inter_area_nearest(area,nearest))
+        return self
 
 
 if __name__ == '__main__':
-    img = imageio.imread(filename)
-    mosaic_inplace(img, (30, 130, 200, -150), methods.area_nearest(5,4))
-    mosaic_inplace(img, (175, -175, 100, 175), methods.area(15))
-    mosaic_inplace(img, (300, 440, 1820, 1880), methods.area(15))
-    from matplotlib import pyplot as plt
-    plt.imshow(img)
-    plt.show()
-    # imageio.imwrite(f"{filename[:filename.rindex('.')]}_with_mosaic.png", img)
+    # doing some test
+    (
+        WeChatScreenShot
+        .imread("testcases/2.jpg")
+        .mosaic_title()
+        .shift_and_mosaic_icons()
+        .mosaic_hit_message(x1=300, y1=1810)
+        .show()
+    )
