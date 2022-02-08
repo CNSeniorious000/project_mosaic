@@ -86,5 +86,6 @@ if __name__ == '__main__':
         .mosaic_title()
         .shift_and_mosaic_icons()
         .mosaic_hit_message(x1=300, y1=1810)
+        .imwrite("testcase/2.jpg")
         .show()
     )
