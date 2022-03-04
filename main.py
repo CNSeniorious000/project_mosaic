@@ -1,7 +1,7 @@
 import imageio
 from loguru import logger
 from functools import partial
-from dictionary import *
+from presets import *
 
 
 def bbox2xxyy(bbox):
